@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Gregory Nothnagel, CS 535, Project #6</title>
+</head>
+
+<body>
+
+<h1>Gregory Nothnagel, CS 535, Project #6</h1>
+
+<canvas id="gl-canvas" width="1024" height="1024"></canvas>
+
+<button id = "Power">Power On/Off</button>
+<button id = "Pause">Pause/Resume</button>
+<button id = "Add Ball" style="display: none;">Add Ball</button>
+<button id = "Remove Ball">Remove Ball</button>
+<button id = "Prev">Prev</button>
+<button id = "Next">Next</button>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+#version 300 es
+
+in vec4 aPosition;
+in vec2 aTexCoord;
+
+out vec2 vTexCoord;
+out vec4 vScreenPosition; // Clip-space position to pass to fragment shader
+
+void main()
+{
+    vec3 angles = radians(vec3(45.0, 10.0, 0.0));
+    vec3 c = cos(angles);
+    vec3 s = sin(angles);
+
+    mat4 rx = mat4(1.0, 0.0, 0.0, 0.0,
+                   0.0, c.x, s.x, 0.0,
+                   0.0, -s.x, c.x, 0.0,
+                   0.0, 0.0, 0.0, 1.0);
+
+    mat4 ry = mat4(c.y, 0.0, -s.y, 0.0,
+                   0.0, 1.0, 0.0, 0.0,
+                   s.y, 0.0, c.y, 0.0,
+                   0.0, 0.0, 0.0, 1.0);
+
+    mat4 rz = mat4(c.z, s.z, 0.0, 0.0,
+                   -s.z, c.z, 0.0, 0.0,
+                   0.0, 0.0, 1.0, 0.0,
+                   0.0, 0.0, 0.0, 1.0);
+
+    vTexCoord = aTexCoord;
+    gl_Position = rz * rx * ry * aPosition;
+    gl_Position.z = -gl_Position.z;
+
+    vScreenPosition = gl_Position; // Pass clip-space position to fragment shader
+}
+
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+#version 300 es
+
+precision mediump float;
+
+in vec2 vTexCoord;
+in vec4 vScreenPosition; // Received from vertex shader
+
+out vec4 fColor;
+
+uniform sampler2D uTex0;
+
+float size = .02;
+
+uniform int uSphere; // 0 means no sphere, 1 means sphere inside, 2 means sphere outside
+
+void main()
+{
+    vec3 screenPos = vScreenPosition.xyz / vScreenPosition.w; // Convert to normalized device coordinates
+
+    // `screenPos.xy` will now be in normalized device coordinates (range -1 to 1)
+    // You can scale it to the screen resolution if needed
+
+	// creating sphere at one of two places on the screen. (the coordinates (-.185, -.18) and (.185, .15) were eyeballed)
+	if (uSphere == 1 && pow(screenPos.x + .185, 2.0) + pow(screenPos.y + .18, 2.0) < pow(size, 2.0)) fColor = vec4(0.0, 0.0, 1.0, 1.0);
+	else if (uSphere == 2 && pow(screenPos.x - .185, 2.0) + pow(screenPos.y + .15, 2.0) < pow(size, 2.0)) fColor = vec4(0.0, 0.0, 1.0, 1.0);
+	else fColor = texture(uTex0, vTexCoord);
+}
+</script>
+
+<script src="../Common/initShaders.js"></script>
+<script src="../Common/MVnew.js"></script>
+<script src="blending.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Gregory Nothnagel, CS 535, Project #4</title>
+<style>
+  #buttonContainer {
+    display: block; /* Ensure buttons are displayed one after another */
+	margin: 10px; /* Adds space between buttons */
+  }
+
+  #buttonContainer button {
+	margin-right: 10px; /* Adds space between buttons */
+  }
+</style>
+</head>
+
+<body>
+<canvas id="gl-canvas" width="1024" height="1024"> </canvas>
+
+
+<div id="buttonContainer">
+    <button id= "increase">increase</button>
+	<button id= "decrease">decrease</button>
+</div>
+
+<div id="buttonContainer2">
+    <button id= "left">left</button>
+	<button id= "right">right</button>
+	<button id= "up">up</button>
+	<button id= "down">down</button>
+</div>
+
+<!-- Dropdown lists below the button container -->
+    <div id="dropdownContainer">
+        <!-- Dropdown for numbers 1-5 -->
+        <label for="numberSelect">Light Position:</label>
+        <select id="numberSelect">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+        </select>
+
+        <!-- Dropdown for letters A-F -->
+        <label for="letterSelect">Camera Position:</label>
+        <select id="letterSelect">
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+            <option value="E">E</option>
+            <option value="F">F</option>
+        </select>
+    </div>
+
+<!-- Vertex Shader -->
+<script id="vertex-shader-depth" type="x-shader/x-vertex">
+#version 300 es
+precision mediump float;
+
+uniform vec3 uCamPosition;
+uniform float uCamFOV;
+uniform vec2 uCamRotation;
+
+in vec4 aPosition;  // Vertex position in world space
+out vec3 vPosition;
+
+float aspect = 1.0;
+float near = 0.1;
+float far = 5.0;
+
+void main() {
+
+	// ROW-MAJOR FORM
+	
+	float angle_Y = radians(uCamRotation.y);
+	float angle_X = radians(uCamRotation.x);
+	mat4 ROTATE_Y = mat4(
+		cos(angle_Y), 0, -sin(angle_Y), 0,
+		0, 1, 0, 0,
+		sin(angle_Y), 0, cos(angle_Y), 0,
+		0, 0, 0, 1
+	);
+	mat4 ROTATE_X = mat4(
+		1, 0, 0, 0,
+		0, cos(angle_X), sin(angle_X), 0,
+		0, -sin(angle_X), cos(angle_X), 0,
+		0, 0, 0, 1
+	);
+	
+	mat4 ROTATE_MATRIX = ROTATE_X * ROTATE_Y;
+	
+	mat4 CamTranslateMatrix = mat4(
+		1.0,	0.0,	0.0,	0.0,
+		0.0,	1.0,	0.0,	0.0,
+		0.0,	0.0,	1.0,	0.0,
+		-uCamPosition.x,	-uCamPosition.y,	-uCamPosition.z,	1.0
+	);
+
+	float f = 1.0 / tan(radians(uCamFOV) / 2.0); // Focal length based on FOV
+	mat4 perspectiveMatrix = mat4(
+        f / aspect, 0.0,  0.0,                                0.0,
+        0.0,        f,    0.0,                                0.0,
+        0.0,        0.0,  (far + near) / (near - far),       -1.0,
+        0.0,        0.0,  (2.0 * far * near) / (near - far),  0.0
+    );
+
+    // Transform vertex position
+    gl_Position = perspectiveMatrix * ROTATE_MATRIX * CamTranslateMatrix * aPosition;
+	
+	vPosition = aPosition.xyz;
+	
+}
+</script>
+
+<script id="fragment-shader-depth" type="x-shader/x-fragment">
+#version 300 es
+precision mediump float;
+
+uniform vec3 uCamPosition;
+
+in vec3 vPosition;
+out vec4 outColor;  // Output color to the framebuffer
+
+vec3 pack(float depth){ // assumes depth range (0, 1]
+
+	float r = floor(depth * 256.0);
+	float g = floor((depth - r / 256.0) * pow(256.0, 2.0));
+	float b = floor((depth - r / 256.0 - g / pow(256.0, 2.0)) * pow(256.0, 3.0));
+
+	return vec3(r / 256.0, g / 256.0, b / 256.0);
+
+}
+
+void main() {
+
+	// can't just do depth = gl_FragCoord.z, since gl_FragCoord.z is not linear
+	float depth = length(vPosition - uCamPosition) / 10.0;
+
+    outColor = vec4(pack(depth), 1.0);  // Use RGB channels to pack depth value
+}
+</script>
+
+
+
+
+<script id="vertex-shader2" type="x-shader/x-vertex">
+#version 300 es
+
+precision mediump float;
+
+uniform vec3 uCamPosition;
+uniform vec3 uEyePosition;
+uniform vec2 uCamRotation;
+
+in vec4 aPosition;    		// Vertex position in world space
+in vec4 aColor;		  		// Vertex color
+out vec4 vColor;      		// Passed to fragment shader
+out vec4 vPositionCamSpace; // Pass texture coordinates to the fragment shader
+out vec3 vPosition;			// = aPosition, interpolated aPosition just passed to frag shader
+out vec3 camDir;
+
+float fov = 90.0;
+float aspect = 1.0;
+float near = 0.1;
+float far = 5.0;
+
+void main() {
+
+	// ROW-MAJOR FORM
+
+	mat4 EyeTranslateMatrix = mat4(
+		1.0,	0.0,	0.0,	0.0,
+		0.0,	1.0,	0.0,	0.0,
+		0.0,	0.0,	1.0,	0.0,
+		-uEyePosition.x,	-uEyePosition.y,	-uEyePosition.z,	1.0
+	);
+
+	float f = 1.0 / tan(radians(fov) / 2.0); // Focal length based on FOV
+	mat4 perspectiveMatrix = mat4(
+        f / aspect, 0.0,  0.0,                                0.0,
+        0.0,        f,    0.0,                                0.0,
+        0.0,        0.0,  (far + near) / (near - far),       -1.0,
+        0.0,        0.0,  (2.0 * far * near) / (near - far),  0.0
+    );
+
+
+    gl_Position = perspectiveMatrix * EyeTranslateMatrix * aPosition;
+	
+
+    vColor = aColor;
+	vPosition = vec3(aPosition);
+	
+	float angle_Y = radians(uCamRotation.y);
+	float angle_X = radians(uCamRotation.x);
+	mat4 ROTATE_Y = mat4(
+		cos(angle_Y), 0, -sin(angle_Y), 0,
+		0, 1, 0, 0,
+		sin(angle_Y), 0, cos(angle_Y), 0,
+		0, 0, 0, 1
+	);
+	mat4 ROTATE_X = mat4(
+		1, 0, 0, 0,
+		0, cos(angle_X), sin(angle_X), 0,
+		0, -sin(angle_X), cos(angle_X), 0,
+		0, 0, 0, 1
+	);
+	mat4 ROTATE_Y_INVERSE = mat4(
+		cos(-angle_Y), 0, -sin(-angle_Y), 0,
+		0, 1, 0, 0,
+		sin(-angle_Y), 0, cos(-angle_Y), 0,
+		0, 0, 0, 1
+	);
+	mat4 ROTATE_X_INVERSE = mat4(
+		1, 0, 0, 0,
+		0, cos(-angle_X), sin(-angle_X), 0,
+		0, -sin(-angle_X), cos(-angle_X), 0,
+		0, 0, 0, 1
+	);
+	
+	mat4 ROTATE_MATRIX = ROTATE_X * ROTATE_Y;
+	mat4 ROTATE_MATRIX_INVERSE = ROTATE_Y_INVERSE * ROTATE_X_INVERSE;
+	
+	mat4 CamTranslateMatrix = mat4(
+		1.0,	0.0,	0.0,	0.0,
+		0.0,	1.0,	0.0,	0.0,
+		0.0,	0.0,	1.0,	0.0,
+		-uCamPosition.x,	-uCamPosition.y,	-uCamPosition.z,	1.0
+	);
+	
+	vPositionCamSpace = ROTATE_MATRIX * CamTranslateMatrix * aPosition;
+	
+	// we need this to see if fragment is in front of or behind the spotlight in the frag shader
+	camDir = (ROTATE_MATRIX_INVERSE * vec4(0.0, 0.0, -1.0, 1.0)).xyz;
+
+
+}
+</script>
+
+<script id="fragment-shader2" type="x-shader/x-fragment">
+#version 300 es
+
+precision mediump float;
+
+uniform sampler2D uDepthTexture;
+uniform vec3 uCamPosition;
+uniform float uCamFOV;
+
+in vec3 camDir;
+in vec4 vColor;
+in vec4 vPositionCamSpace;			// Passed texture coordinates from the vertex shader
+in vec3 vPosition;					// = aPosition
+out vec4 fColor;
+
+
+float aspect = 1.0;
+float near = 0.1;
+float far = 5.0;
+	
+float unpack(vec4 color){
+	return color.r + color.g / 256.0 + color.b / pow(256.0, 2.0);
+}
+
+void main()
+{
+
+	// projection needs to happen in the fragment shader. If projection occurs in vertex shader, then vPositionCamSpace doesn't interpolate properly
+	float f = 1.0 / tan(radians(uCamFOV) / 2.0); // Focal length based on FOV
+	mat4 perspectiveMatrix = mat4(
+        f / aspect, 0.0,  0.0,                                0.0,
+        0.0,        f,    0.0,                                0.0,
+        0.0,        0.0,  (far + near) / (near - far),       -1.0,
+        0.0,        0.0,  (2.0 * far * near) / (near - far),  0.0
+    );
+	
+	vec3 texCoord = (perspectiveMatrix * vPositionCamSpace).xyz / (perspectiveMatrix * vPositionCamSpace).w; // range [-1,1]
+	texCoord = (texCoord * 0.5) + vec3(0.5);
+
+
+	// distance from point in scene to light source (called camera)
+	float FragCamDistance = length(vPosition - uCamPosition);
+	
+	// depth map value at projection of this point in scene onto depth map uDepthTexture
+	float SamplingDistance = unpack(texture(uDepthTexture, texCoord.xy)) * 10.0;
+	
+	if (
+	FragCamDistance > SamplingDistance + .001 ||
+	dot(normalize(vPosition - uCamPosition), camDir) < 0.0 ||
+	pow(texCoord.x - .5, 2.0) + pow(texCoord.y - .5, 2.0) > .25
+	) {
+		// if a point in the scene is in shadow it's just rendered with less intensity
+		fColor = vec4(vColor.rgb * .1, vColor.a);
+	}
+	else {
+	
+		float intensity = (.25 - (pow(texCoord.x - .5, 2.0) + pow(texCoord.y - .5, 2.0))) * 4.0; // so that the spotlight is blurred at the edges
+		intensity /= pow(FragCamDistance, 2.0); // since light follows inverse square law (intensity /= distance^2)
+		intensity = (intensity + .1) / 1.1;
+		fColor = vec4(vColor.rgb * intensity, 1.0);
+		
+	}
+	
+	// this shows that the sampled depth map distance is not always correct. Depth map always correct if light rotation is [0.0, 0.0], may be incorrect otherwise. This is the main error in the whole program.
+	//fColor = vec4(vec3(SamplingDistance), 1.0);
+	
+	// this shows that the sampling is always happening correctly. This means the sampler2D is not where the problem occurs
+	//fColor = vec4(vec3(texCoord.x), 1.0);
+	//fColor = vec4(vec3(texCoord.x), 1.0);
+	
+	// this shows that the FragCamDistance is always correct. This means that FragCamDistance is not where the error occurs
+	//fColor = vec4(vec3(FragCamDistance), 1.0);
+
+}
+</script>
+
+
+
+
+<script src="../Common/initShaders.js"></script>
+<script src="../Common/MVnew.js"></script>
+<script src="spotlight.js"></script>
+
+</body>
+</html>

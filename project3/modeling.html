@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Gregory Nothnagel, CS 535, Project #3</title>
+<style>
+  #buttonContainer {
+    display: block; /* Ensure buttons are displayed one after another */
+	margin: 10px; /* Adds space between buttons */
+  }
+
+  #buttonContainer button {
+	margin-right: 10px; /* Adds space between buttons */
+  }
+</style>
+</head>
+
+<body>
+<canvas id="gl-canvas" width="512" height="512"> </canvas>
+
+
+<div id="buttonContainer">
+    <button id= "xButton">Rotate X</button>
+	<button id= "yButton">Rotate Y</button>
+	<button id= "zButton">Rotate Z</button>
+</div>
+
+<div id="buttonContainer">
+    <button id= "Start">Start</button>
+	<button id= "Stop">Stop</button>
+</div>
+
+<div id="buttonContainer">
+    <button id= "UNLEADED">UNLEADED</button>
+	<button id= "MIDGRADE">MIDGRADE</button>
+	<button id= "SUPREME">SUPREME</button>
+</div>
+
+<div id="buttonContainer">
+    <button id= "Up">Up</button>
+	<button id= "Down">Down</button>
+</div>
+
+
+<!-- Vertex Shader -->
+<script id="vertex-shader" type="x-shader/x-vertex">
+#version 300 es
+
+in vec4 aPosition;    // Vertex position
+in vec3 aNormal;      // Normal vector for lighting calculations
+in vec4 aColor;		  // Vertex color
+out vec4 vColor;      // Passed to fragment shader
+
+uniform vec3 uTheta;  // Rotation angles
+
+uniform vec3 uLightDirection; // Direction of the light
+
+void main() {
+
+    // Compute the sines and cosines of theta for each of the three axes
+    vec3 angles = radians(uTheta);
+    vec3 c = cos(angles);
+    vec3 s = sin(angles);
+
+    // Rotation matrices for x, y, z axes
+    mat4 rx = mat4(1.0, 0.0, 0.0, 0.0,
+                   0.0, c.x, s.x, 0.0,
+                   0.0, -s.x, c.x, 0.0,
+                   0.0, 0.0, 0.0, 1.0);
+    mat4 ry = mat4(c.y, 0.0, -s.y, 0.0,
+                   0.0, 1.0, 0.0, 0.0,
+                   s.y, 0.0, c.y, 0.0,
+                   0.0, 0.0, 0.0, 1.0);
+    mat4 rz = mat4(c.z, s.z, 0.0, 0.0,
+                   -s.z, c.z, 0.0, 0.0,
+                   0.0, 0.0, 1.0, 0.0,
+                   0.0, 0.0, 0.0, 1.0);
+
+
+    gl_Position = rz * ry * rx * aPosition;
+	
+	// WebGL uses right-handed coordinate system by default, but standard 3d rendering looks from -z to +z, so gl_position is flipped to match that
+    gl_Position.z = -gl_Position.z;
+
+    // Calculate the diffuse lighting based on the light direction and normal
+    float diffuse = max(dot(normalize(uLightDirection), aNormal), 0.0);
+
+    // Apply the lighting to the vertex color
+    vColor = vec4(aColor.r * diffuse, aColor.b * diffuse, aColor.g * diffuse, 1.0);
+
+}
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+#version 300 es
+
+precision mediump float;
+
+in vec4 vColor;
+out vec4 fColor;
+
+void
+main()
+{
+    fColor = vColor;
+}
+</script>
+
+<script src="../Common/initShaders.js"></script>
+<script src="../Common/MVnew.js"></script>
+<script src="modeling.js"></script>
+
+</body>
+</html>
